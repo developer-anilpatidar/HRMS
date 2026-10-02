@@ -1,0 +1,56 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs & runtime
+*.log
+logs/
+tmp/
+temp/
+
+# Local databases / dumps (keep schema/seed in db/)
+*.sql.gz
+*.dump
+
+# Test / coverage
+coverage.xml
+.coverage.*
+
+# Jupyter
+.ipynb_checkpoints/
