@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+import os
 
 from app.api import chat as chat_api
 from app.api import leave as leave_api
@@ -8,6 +10,24 @@ from app.api import me as me_api
 from app.db import get_db
 
 app = FastAPI(title="AI HRMS")
+
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(me_api.router)
 app.include_router(leave_api.router)
 app.include_router(chat_api.router)
