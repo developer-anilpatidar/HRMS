@@ -49,3 +49,5 @@ xxhash==4.0.1
 zstandard==0.25.0
 langchain-ollama==1.1.0
 ollama==0.6.3
+langgraph-checkpoint-postgres==3.1.2
+psycopg-pool==3.3.3

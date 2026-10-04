@@ -1,18 +1,15 @@
 """Employee agent LangGraph.
 
-With profile tools:
+With profile/leave tools + Postgres checkpointer:
 
     START → agent ⇄ tools → END
-
-Without tools (fallback):
-
-    START → agent → END
+    (state persisted by thread_id)
 """
 
 from __future__ import annotations
 
 import os
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Any, Sequence, TypedDict
 from uuid import UUID
 
 from dotenv import load_dotenv
@@ -44,8 +41,11 @@ def get_chat_model() -> ChatOllama:
     )
 
 
-def build_employee_graph(tools: Sequence[BaseTool] | None = None):
-    """Compile employee graph. Pass tools to enable the ReAct loop."""
+def build_employee_graph(
+    tools: Sequence[BaseTool] | None = None,
+    checkpointer: Any | None = None,
+):
+    """Compile employee graph. Pass tools + optional Postgres checkpointer."""
     tools = list(tools or [])
     llm = get_chat_model()
     llm_with_tools = llm.bind_tools(tools) if tools else llm
@@ -66,4 +66,4 @@ def build_employee_graph(tools: Sequence[BaseTool] | None = None):
     else:
         graph.add_edge("agent", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

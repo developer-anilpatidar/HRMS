@@ -1,15 +1,26 @@
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-import os
 
+from app.agents.checkpoint import close_checkpointer, init_checkpointer
 from app.api import chat as chat_api
 from app.api import leave as leave_api
 from app.api import me as me_api
 from app.db import get_db
 
-app = FastAPI(title="AI HRMS")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_checkpointer()
+    yield
+    close_checkpointer()
+
+
+app = FastAPI(title="AI HRMS", lifespan=lifespan)
 
 _cors_origins = [
     origin.strip()

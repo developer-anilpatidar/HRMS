@@ -14,6 +14,8 @@ type ChatMessage = {
 const EMPLOYEE_EMAIL =
   process.env.NEXT_PUBLIC_EMPLOYEE_EMAIL ?? "neha.verma@novatech.example";
 
+const THREAD_STORAGE_KEY = "hrms.employee.thread_id";
+
 const SUGGESTIONS = [
   "Who am I and who is my manager?",
   "What is my casual leave balance for 2026?",
@@ -24,23 +26,37 @@ function newId() {
   return crypto.randomUUID();
 }
 
+const welcomeMessage = (): ChatMessage => ({
+  id: newId(),
+  role: "assistant",
+  content:
+    "Hi — I’m your Employee Agent. Ask about your profile, leave balance, or apply for leave.",
+});
+
 export default function EmployeeChat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: newId(),
-      role: "assistant",
-      content:
-        "Hi — I’m your Employee Agent. Ask about your profile, leave balance, or apply for leave.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage()]);
+  const [threadId, setThreadId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(THREAD_STORAGE_KEY);
+    if (saved) setThreadId(saved);
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  function startNewChat() {
+    window.localStorage.removeItem(THREAD_STORAGE_KEY);
+    setThreadId(null);
+    setMessages([welcomeMessage()]);
+    setError(null);
+    setInput("");
+  }
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -55,7 +71,9 @@ export default function EmployeeChat() {
     setLoading(true);
 
     try {
-      const data = await postChat(trimmed, EMPLOYEE_EMAIL);
+      const data = await postChat(trimmed, EMPLOYEE_EMAIL, threadId);
+      setThreadId(data.thread_id);
+      window.localStorage.setItem(THREAD_STORAGE_KEY, data.thread_id);
       setMessages((prev) => [
         ...prev,
         { id: newId(), role: "assistant", content: data.reply },
@@ -92,9 +110,25 @@ export default function EmployeeChat() {
             </p>
             <p className="mt-1 text-sm text-teal-900/70">Employee Agent chat</p>
           </div>
-          <p className="rounded-md bg-teal-950/5 px-3 py-1.5 text-xs text-teal-900/80">
-            Signed in as <span className="font-medium">{EMPLOYEE_EMAIL}</span>
-          </p>
+          <div className="flex flex-col items-end gap-2">
+            <p className="rounded-md bg-teal-950/5 px-3 py-1.5 text-xs text-teal-900/80">
+              Signed in as <span className="font-medium">{EMPLOYEE_EMAIL}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              {threadId && (
+                <p className="max-w-[12rem] truncate text-[11px] text-teal-900/50" title={threadId}>
+                  thread: {threadId.slice(0, 8)}…
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="rounded-md border border-teal-900/15 bg-white/80 px-2.5 py-1 text-xs text-teal-900 transition hover:bg-white"
+              >
+                New chat
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
