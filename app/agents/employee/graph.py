@@ -1,23 +1,27 @@
-"""Employee agent LangGraph — LLM wired, no tools yet.
+"""Employee agent LangGraph.
 
-Graph shape for this step:
+With profile tools:
 
-    START → agent(Ollama) → END
+    START → agent ⇄ tools → END
 
-Next step: add tools node + conditional edges (ReAct loop).
+Without tools (fallback):
+
+    START → agent → END
 """
 
 from __future__ import annotations
 
 import os
-from typing import Annotated, TypedDict
+from typing import Annotated, Sequence, TypedDict
 from uuid import UUID
 
 from dotenv import load_dotenv
 from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.tools import BaseTool
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
 
 from app.agents.employee.prompt import EMPLOYEE_SYSTEM_PROMPT
 
@@ -40,25 +44,30 @@ def get_chat_model() -> ChatOllama:
     )
 
 
-def agent_node(state: EmployeeAgentState) -> dict:
-    """Call local Ollama with the employee system prompt (no tools yet)."""
+def build_employee_graph(tools: Sequence[BaseTool] | None = None):
+    """Compile employee graph. Pass tools to enable the ReAct loop."""
+    tools = list(tools or [])
     llm = get_chat_model()
-    messages = [SystemMessage(content=EMPLOYEE_SYSTEM_PROMPT), *state["messages"]]
-    response = llm.invoke(messages)
-    return {"messages": [response]}
+    llm_with_tools = llm.bind_tools(tools) if tools else llm
 
+    def agent_node(state: EmployeeAgentState) -> dict:
+        messages = [SystemMessage(content=EMPLOYEE_SYSTEM_PROMPT), *state["messages"]]
+        response = llm_with_tools.invoke(messages)
+        return {"messages": [response]}
 
-def build_employee_graph():
-    """Compile START → agent → END."""
     graph = StateGraph(EmployeeAgentState)
-
     graph.add_node("agent", agent_node)
-
     graph.add_edge(START, "agent")
-    graph.add_edge("agent", END)
+
+    if tools:
+        graph.add_node("tools", ToolNode(tools))
+        graph.add_conditional_edges("agent", tools_condition)
+        graph.add_edge("tools", "agent")
+    else:
+        graph.add_edge("agent", END)
 
     return graph.compile()
 
 
-# Module-level compiled graph for reuse
+# Fallback graph without tools (e.g. quick import smoke tests)
 employee_graph = build_employee_graph()

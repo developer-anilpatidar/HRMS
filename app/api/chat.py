@@ -1,19 +1,23 @@
-"""Basic chat API: START → LLM → END (no tools yet)."""
+"""Chat API: Employee agent with profile tools (leave tools later)."""
 
 from fastapi import APIRouter
 from langchain_core.messages import HumanMessage
 
-from app.agents.employee.graph import employee_graph
-from app.api.deps import CurrentEmployee
+from app.agents.employee.graph import build_employee_graph
+from app.agents.employee.tools import build_profile_tools
+from app.api.deps import CurrentEmployee, DbSession
 from app.schemas.chat import ChatIn, ChatOut
 
 router = APIRouter(tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatOut)
-def chat(payload: ChatIn, employee: CurrentEmployee) -> ChatOut:
-    """Send one message to the Employee agent"""
-    result = employee_graph.invoke(
+def chat(payload: ChatIn, db: DbSession, employee: CurrentEmployee) -> ChatOut:
+    """Send one message to the Employee agent (profile tools enabled)."""
+    tools = build_profile_tools(db, employee.id)
+    graph = build_employee_graph(tools)
+
+    result = graph.invoke(
         {
             "messages": [HumanMessage(content=payload.message)],
             "employee_id": employee.id,
