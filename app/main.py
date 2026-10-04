@@ -1,9 +1,12 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app.api import me as me_api
 from app.db import get_db
 
 app = FastAPI(title="AI HRMS")
+app.include_router(me_api.router)
 
 
 @app.get("/")
@@ -12,6 +15,7 @@ def root():
         "app": "AI HRMS",
         "docs": "/docs",
         "health_db": "/health/db",
+        "me": "/me",
     }
 
 
