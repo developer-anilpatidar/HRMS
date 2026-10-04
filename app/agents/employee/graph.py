@@ -67,7 +67,3 @@ def build_employee_graph(tools: Sequence[BaseTool] | None = None):
         graph.add_edge("agent", END)
 
     return graph.compile()
-
-
-# Fallback graph without tools (e.g. quick import smoke tests)
-employee_graph = build_employee_graph()

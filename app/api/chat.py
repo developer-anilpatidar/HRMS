@@ -1,10 +1,10 @@
-"""Chat API: Employee agent with profile tools (leave tools later)."""
+"""Chat API: Employee agent with profile + leave tools."""
 
 from fastapi import APIRouter
 from langchain_core.messages import HumanMessage
 
 from app.agents.employee.graph import build_employee_graph
-from app.agents.employee.tools import build_profile_tools
+from app.agents.employee.tools import build_employee_tools
 from app.api.deps import CurrentEmployee, DbSession
 from app.schemas.chat import ChatIn, ChatOut
 
@@ -13,8 +13,8 @@ router = APIRouter(tags=["chat"])
 
 @router.post("/chat", response_model=ChatOut)
 def chat(payload: ChatIn, db: DbSession, employee: CurrentEmployee) -> ChatOut:
-    """Send one message to the Employee agent (profile tools enabled)."""
-    tools = build_profile_tools(db, employee.id)
+    """Send one message to the Employee agent."""
+    tools = build_employee_tools(db, employee.id, employee.organization_id)
     graph = build_employee_graph(tools)
 
     result = graph.invoke(
