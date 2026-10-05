@@ -1,8 +1,10 @@
 """Chat API: Employee agent with profile + leave tools and Postgres memory."""
 
+import json
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import text
 
@@ -36,7 +38,15 @@ def _client_thread_id(employee_id: UUID, langgraph_thread_id: str) -> str | None
 def _message_content(content: object) -> str:
     if isinstance(content, str):
         return content
-    return str(content)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content) if content is not None else ""
 
 
 def _ui_messages_from_checkpoint(messages: list) -> list[ChatMessageOut]:
@@ -48,11 +58,14 @@ def _ui_messages_from_checkpoint(messages: list) -> list[ChatMessageOut]:
                 ChatMessageOut(role="user", content=_message_content(message.content))
             )
         elif msg_type == "ai" or isinstance(message, AIMessage):
-            # Skip pure tool-call turns with empty visible text when possible
-            text = _message_content(message.content).strip()
-            if text:
-                out.append(ChatMessageOut(role="assistant", content=text))
+            text_content = _message_content(message.content).strip()
+            if text_content:
+                out.append(ChatMessageOut(role="assistant", content=text_content))
     return out
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @router.get("/chat/threads", response_model=list[ChatThreadOut])
@@ -141,11 +154,82 @@ def chat(payload: ChatIn, db: DbSession, employee: CurrentEmployee) -> ChatOut:
     )
     reply = result["messages"][-1].content
     if not isinstance(reply, str):
-        reply = str(reply)
+        reply = _message_content(reply)
 
     return ChatOut(
         reply=reply,
         thread_id=thread_id,
         employee_id=str(employee.id),
         employee_email=employee.work_email,
+    )
+
+
+@router.post("/chat/stream")
+def chat_stream(payload: ChatIn, db: DbSession, employee: CurrentEmployee):
+    """Stream Employee agent tokens over SSE (text/event-stream)."""
+    thread_id = payload.thread_id or str(uuid4())
+    tools = build_employee_tools(db, employee.id, employee.organization_id)
+    graph = build_employee_graph(tools, checkpointer=get_checkpointer())
+    config = {
+        "configurable": {
+            "thread_id": _langgraph_thread_id(employee.id, thread_id),
+        }
+    }
+    graph_input = {
+        "messages": [HumanMessage(content=payload.message)],
+        "employee_id": employee.id,
+        "organization_id": employee.organization_id,
+    }
+
+    def event_generator():
+        yield _sse(
+            {
+                "type": "meta",
+                "thread_id": thread_id,
+                "employee_id": str(employee.id),
+                "employee_email": employee.work_email,
+            }
+        )
+        try:
+            last_status: str | None = None
+            for chunk, metadata in graph.stream(
+                graph_input,
+                config=config,
+                stream_mode="messages",
+            ):
+                node = metadata.get("langgraph_node")
+                if node == "tools":
+                    status_msg = "Running tools…"
+                    if status_msg != last_status:
+                        last_status = status_msg
+                        yield _sse({"type": "status", "content": status_msg})
+                    continue
+                if node != "agent":
+                    continue
+
+                tool_call_chunks = getattr(chunk, "tool_call_chunks", None) or []
+                if tool_call_chunks and not _message_content(chunk.content):
+                    status_msg = "Calling tools…"
+                    if status_msg != last_status:
+                        last_status = status_msg
+                        yield _sse({"type": "status", "content": status_msg})
+                    continue
+
+                text = _message_content(chunk.content)
+                if text:
+                    last_status = None
+                    yield _sse({"type": "token", "content": text})
+
+            yield _sse({"type": "done", "thread_id": thread_id})
+        except Exception as exc:  # noqa: BLE001 - surface to client stream
+            yield _sse({"type": "error", "detail": str(exc)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

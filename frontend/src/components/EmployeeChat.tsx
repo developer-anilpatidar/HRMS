@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   getChatThread,
   listChatThreads,
-  postChat,
+  streamChat,
   type ChatThread,
 } from "@/lib/api";
 
@@ -44,6 +44,7 @@ export default function EmployeeChat() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [loadingThread, setLoadingThread] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +138,11 @@ export default function EmployeeChat() {
     if (!trimmed || loading) return;
 
     setError(null);
+    setStatusText("Thinking with Ollama…");
     setInput("");
+    const assistantId = newId();
+    let streamedText = "";
+    let activeThreadId = threadId;
     setMessages((prev) => [
       ...prev,
       { id: newId(), role: "user", content: trimmed },
@@ -145,20 +150,57 @@ export default function EmployeeChat() {
     setLoading(true);
 
     try {
-      const data = await postChat(trimmed, EMPLOYEE_EMAIL, threadId);
-      setThreadId(data.thread_id);
-      window.localStorage.setItem(THREAD_STORAGE_KEY, data.thread_id);
-      setMessages((prev) => [
-        ...prev,
-        { id: newId(), role: "assistant", content: data.reply },
-      ]);
+      await streamChat(trimmed, EMPLOYEE_EMAIL, threadId, (event) => {
+        if (event.type === "meta") {
+          activeThreadId = event.thread_id;
+          setThreadId(event.thread_id);
+          window.localStorage.setItem(THREAD_STORAGE_KEY, event.thread_id);
+          return;
+        }
+        if (event.type === "status") {
+          setStatusText(event.content);
+          return;
+        }
+        if (event.type === "token") {
+          setStatusText(null);
+          streamedText += event.content;
+          const snapshot = streamedText;
+          setMessages((prev) => {
+            const without = prev.filter((m) => m.id !== assistantId);
+            return [
+              ...without,
+              { id: assistantId, role: "assistant", content: snapshot },
+            ];
+          });
+          return;
+        }
+        if (event.type === "done") {
+          activeThreadId = event.thread_id || activeThreadId;
+          return;
+        }
+        if (event.type === "error") {
+          throw new Error(event.detail);
+        }
+      });
+
+      // If UI never received tokens (buffering/proxy), load final reply from DB.
+      if (activeThreadId && !streamedText.trim()) {
+        const detail = await getChatThread(activeThreadId, EMPLOYEE_EMAIL);
+        setMessages(
+          detail.messages.map((m) => ({
+            id: newId(),
+            role: m.role === "user" ? "user" : "assistant",
+            content: m.content,
+          })),
+        );
+      }
       void refreshThreads();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Something went wrong talking to the API.";
       setError(message);
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter((m) => m.id !== assistantId),
         {
           id: newId(),
           role: "system",
@@ -167,6 +209,7 @@ export default function EmployeeChat() {
       ]);
     } finally {
       setLoading(false);
+      setStatusText(null);
     }
   }
 
@@ -287,9 +330,9 @@ export default function EmployeeChat() {
                   </div>
                 ))}
 
-                {loading && (
+                {loading && statusText && (
                   <div className="mr-auto max-w-[85%] rounded-2xl rounded-bl-md border border-teal-900/10 bg-white/80 px-4 py-3 text-sm text-teal-800/70">
-                    Thinking with Ollama…
+                    {statusText}
                   </div>
                 )}
                 <div ref={bottomRef} />

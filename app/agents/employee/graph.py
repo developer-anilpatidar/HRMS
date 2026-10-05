@@ -52,6 +52,7 @@ def build_employee_graph(
 
     def agent_node(state: EmployeeAgentState) -> dict:
         messages = [SystemMessage(content=EMPLOYEE_SYSTEM_PROMPT), *state["messages"]]
+        # Use stream so /chat/stream can emit tokens via stream_mode="messages"
         response = llm_with_tools.invoke(messages)
         return {"messages": [response]}
 
