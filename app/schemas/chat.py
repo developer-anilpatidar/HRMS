@@ -15,3 +15,20 @@ class ChatOut(BaseModel):
     thread_id: str
     employee_id: str
     employee_email: str
+
+
+class ChatMessageOut(BaseModel):
+    role: str
+    content: str
+
+
+class ChatThreadOut(BaseModel):
+    thread_id: str
+    title: str
+    message_count: int
+    updated_at: str | None = None
+
+
+class ChatThreadDetailOut(BaseModel):
+    thread_id: str
+    messages: list[ChatMessageOut]
